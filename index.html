@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Realtime Rooms</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:," />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Realtime Rooms</h1>
+      <div id="status">offline</div>
+    </header>
+
+    <section class="join">
+      <div class="field">
+        <label>Your name</label>
+        <input id="name" type="text" placeholder="e.g., Marley" maxlength="24" />
+      </div>
+      <div class="field">
+        <label>Room</label>
+        <input id="room" type="text" placeholder="e.g., general" maxlength="32" />
+      </div>
+      <button id="joinBtn">Join Room</button>
+      <p class="hint">Tip: share a link like <code>?room=general</code> so friends land in the same room.</p>
+    </section>
+
+    <section class="chat hidden" id="chat">
+      <div class="chat-header">
+        <div>
+          <strong id="roomName">#general</strong>
+          <span id="online">(0 online)</span>
+        </div>
+        <button id="leaveBtn" class="ghost">Leave</button>
+      </div>
+
+      <ul id="messages"></ul>
+
+      <div id="typing" class="typing hidden">Someone is typing…</div>
+
+      <form id="sendForm" autocomplete="off">
+        <input id="msg" type="text" placeholder="Type a message…" maxlength="500" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <footer>
+      <span>Built with Node + Socket.IO</span>
+      <a href="https://socket.io/" target="_blank" rel="noreferrer">Docs</a>
+    </footer>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>

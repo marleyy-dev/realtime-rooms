@@ -1,0 +1,16 @@
+{
+    "name": "realtime-rooms",
+    "version": "1.0.0",
+    "description": "Simple real-time message rooms platform (Node + Express + Socket.IO).",
+    "main": "server.js",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "dependencies": {
+        "dotenv": "^16.6.1",
+        "express": "^4.21.2",
+        "socket.io": "^4.8.1"
+    }
+}
