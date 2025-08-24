@@ -19,11 +19,11 @@ const PORT = process.env.PORT || 3000;
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory store (simple on purpose)
-const rooms = new Map(); // roomName -> { users: Map(socketId -> {name}), history: [{name,text,time}] }
+// In-memory store
+// roomName -> { users: Map(socketId -> {name, pic}), history: [...] }
+const rooms = new Map();
 const MAX_HISTORY = 100;
 
-// Helper to ensure room exists
 function ensureRoom(room) {
   if (!rooms.has(room)) {
     rooms.set(room, { users: new Map(), history: [] });
@@ -31,7 +31,7 @@ function ensureRoom(room) {
   return rooms.get(room);
 }
 
-// API to get room info (so links like /?room=general work)
+// --- API for room info ---
 app.get('/api/room/:room', (req, res) => {
   const { room } = req.params;
   const r = rooms.get(room);
@@ -41,22 +41,23 @@ app.get('/api/room/:room', (req, res) => {
   });
 });
 
-// Socket.IO real-time events
+// --- Socket.IO events ---
 io.on('connection', (socket) => {
-  // Client announces join with name + room
-  socket.on('join', ({ name, room }) => {
+  // Client joins with name, room, (optionally pic)
+  socket.on('join', ({ name, room, pic }) => {
     const cleanName = String(name || 'Guest').slice(0, 24).trim() || 'Guest';
     const cleanRoom = String(room || 'general').slice(0, 32).trim().toLowerCase() || 'general';
 
     socket.data.name = cleanName;
     socket.data.room = cleanRoom;
+    socket.data.pic = pic || null;
 
     const r = ensureRoom(cleanRoom);
-    r.users.set(socket.id, { name: cleanName });
+    r.users.set(socket.id, { name: cleanName, pic: socket.data.pic });
 
     socket.join(cleanRoom);
 
-    // Send existing history to the newly joined user
+    // Send existing history
     socket.emit('history', r.history);
 
     // Broadcast join
@@ -66,42 +67,87 @@ io.on('connection', (socket) => {
       online: r.users.size,
       time: Date.now()
     });
+
+    // Send updated room list to everyone
+    broadcastRooms();
+  });
+
+  // Update profile picture
+  socket.on('setProfilePic', (picUrl) => {
+    socket.data.pic = picUrl;
+    const r = ensureRoom(socket.data.room);
+    if (r.users.has(socket.id)) {
+      r.users.set(socket.id, { name: socket.data.name, pic: picUrl });
+    }
+    broadcastRooms();
   });
 
   // Incoming message
   socket.on('message', (text) => {
     const name = socket.data.name || 'Guest';
     const room = socket.data.room || 'general';
+    const pic = socket.data.pic || null;
     const r = ensureRoom(room);
 
     const msg = {
       name,
       text: String(text || '').slice(0, 500),
-      time: Date.now()
+      time: Date.now(),
+      pic
     };
     if (!msg.text) return;
 
-    // Save to history (trim)
     r.history.push(msg);
     if (r.history.length > MAX_HISTORY) r.history.shift();
 
-    // Broadcast to room
     io.to(room).emit('message', msg);
   });
 
-  // Typing indicator (optional, lightweight)
+  // Typing indicator
   socket.on('typing', (isTyping) => {
     const name = socket.data.name || 'Guest';
     const room = socket.data.room || 'general';
     socket.to(room).emit('typing', { name, isTyping: Boolean(isTyping) });
   });
 
-  // Leaving / disconnect
+  // Handle room switch
+  socket.on('switchRoom', (newRoom) => {
+    const oldRoom = socket.data.room;
+    if (oldRoom === newRoom) return;
+
+    // Leave old
+    if (oldRoom && rooms.has(oldRoom)) {
+      const r = rooms.get(oldRoom);
+      r.users.delete(socket.id);
+      io.to(oldRoom).emit('system', {
+        type: 'leave',
+        text: `${socket.data.name} left`,
+        online: r.users.size,
+        time: Date.now()
+      });
+    }
+
+    // Join new
+    socket.data.room = newRoom;
+    const r = ensureRoom(newRoom);
+    r.users.set(socket.id, { name: socket.data.name, pic: socket.data.pic });
+    socket.join(newRoom);
+
+    socket.emit('history', r.history);
+    io.to(newRoom).emit('system', {
+      type: 'join',
+      text: `${socket.data.name} joined`,
+      online: r.users.size,
+      time: Date.now()
+    });
+
+    broadcastRooms();
+  });
+
+  // Disconnect
   socket.on('disconnect', () => {
     const room = socket.data.room;
-    const name = socket.data.name;
     if (!room) return;
-
     const r = rooms.get(room);
     if (!r) return;
 
@@ -109,14 +155,22 @@ io.on('connection', (socket) => {
 
     io.to(room).emit('system', {
       type: 'leave',
-      text: `${name || 'Guest'} left`,
+      text: `${socket.data.name || 'Guest'} left`,
       online: r.users.size,
       time: Date.now()
     });
 
-    // If room becomes empty, we can optionally clear it:
-    // if (r.users.size === 0) rooms.delete(room);
+    broadcastRooms();
   });
+
+  // Helper: broadcast all rooms + user counts
+  function broadcastRooms() {
+    const roomList = {};
+    for (const [roomName, r] of rooms.entries()) {
+      roomList[roomName] = r.users.size;
+    }
+    io.emit('roomList', roomList);
+  }
 });
 
 httpServer.listen(PORT, () => {
